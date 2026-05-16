@@ -43,9 +43,10 @@ def keep_alive():
 
 async def send_msg(text):
     try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text, parse_mode='HTML')
-    except Exception:
-        pass
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+    except Exception as e:
+        print(f"🚨 MATSALAR TELEGRAM: {e}", flush=True)
 
 def check_advanced_security(token_address):
     return True
