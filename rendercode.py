@@ -1,155 +1,67 @@
 import asyncio
-import websockets
-import json
 import requests
-from telegram import Bot
-from flask import Flask
+from flask import Flask, request, jsonify
 from threading import Thread
 
 # --- BAYANANKA DA API KEYS ---
-TELEGRAM_BOT_TOKEN = "8513711051:AAHNH_JyFvcw87FrE0bKNYakyBkvZa8KraM"
-TELEGRAM_CHAT_ID = "6600029204"
-HELIUS_API_KEY = "6807c3b4-c7ff-45d1-97e1-76b4493556cc"
-
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+TELEGRAM_BOT_TOKEN = "SAKA_SABON_TOKEN_DINKA_A_NAN"
+TELEGRAM_CHAT_ID = "SAKA_SABON_CHAT_ID_DINKA_A_NAN"
 
 PAPER_TRADE_AMOUNT = 20.0
 ACTIVE_PAPER_TRADES = {}
-SEEN_SIGS = set()
 SEEN_TOKENS = set()
+INCOMING_WEBHOOK_TOKENS = [] 
 
-# --- LISSAFIN WIN RATE DA P&L ---
 TOTAL_TRADES = 0
 WINNING_TRADES = 0
 NET_REALIZED_PNL_USD = 0.0
 
-# ======================================================================
-# Dabarar Yaudarar Render (Fake Website domin aiki 24/7)
-# ======================================================================
+# --- KOFAR ASIBITIN RENDER (WEBHOOK) ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🟢 KDV-Scanner (BlockchainFanatic 001) Yana aiki lafiya lau 24/7!"
+    return "🟢 KDV-Scanner (Webhook) Yana aiki lafiya lau 24/7!"
+
+@app.route('/webhook', methods=['POST'])
+def helius_webhook():
+    data = request.json
+    if data and isinstance(data, list):
+        for tx in data:
+            transfers = tx.get("tokenTransfers", [])
+            for transfer in transfers:
+                mint = transfer.get("mint")
+                if mint and mint != "So11111111111111111111111111111111111111112":
+                    if mint not in SEEN_TOKENS:
+                        INCOMING_WEBHOOK_TOKENS.append(mint)
+                        SEEN_TOKENS.add(mint)
+                        print(f"🔥 KOFAR ASIBITI: An Karbi Sabon Token: {mint}", flush=True)
+    return jsonify({"status": "success"}), 200
 
 def run_server():
-    # Render tana amfani da port 10000 a kyauta
     app.run(host="0.0.0.0", port=10000)
 
 def keep_alive():
     t = Thread(target=run_server)
     t.start()
-# ======================================================================
 
 async def send_msg(text):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
-        print(f"AMSA DAGA TELEGRAM: {res.text}", flush=True)
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
     except Exception as e:
-        print(f"🚨 MATSALAR NETWORK: {e}", flush=True)
+        print(f"🚨 MATSALAR TELEGRAM: {e}", flush=True)
+
 def check_advanced_security(token_address):
     return True
 
-async def send_hourly_report():
-    while True:
-        await asyncio.sleep(3600)
-        if not ACTIVE_PAPER_TRADES:
-            continue
-        msg = "⚪ <b>RAHOTON AWA GUDA NA TOKENS (HOURLY)</b>\n\n"
-        for token, data in ACTIVE_PAPER_TRADES.items():
-            try:
-                res = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{token}").json()
-                current_price = float(res['pairs'][0]['priceUsd'])
-                buy_price = data['buy_price']
-                current_pnl = ((current_price - buy_price) / buy_price) * 100
-                pnl_usd = PAPER_TRADE_AMOUNT * (current_pnl / 100)
-                sign = "+" if current_pnl >= 0 else ""
-                msg += f"🔹 <b>{data['name']}</b>: {sign}{current_pnl:.2f}% ({sign}${pnl_usd:.2f})\n"
-            except:
-                msg += f"🔹 <b>{data['name']}</b>: <i>Ana lissafi...</i>\n"
-        await send_msg(msg)
-
-async def send_daily_report():
-    global TOTAL_TRADES, WINNING_TRADES, NET_REALIZED_PNL_USD
-    while True:
-        await asyncio.sleep(86400)
-        if TOTAL_TRADES > 0:
-            winrate = (WINNING_TRADES / TOTAL_TRADES) * 100
-            pnl_sign = "+" if NET_REALIZED_PNL_USD >= 0 else ""
-            emoji = "💰" if NET_REALIZED_PNL_USD >= 0 else "💸"
-            msg = (f"📊 <b>RAHOTON AWA 24 (DAILY MASTER REPORT)</b>\n\n"
-                   f"💸 <b>Kudin Trade:</b> ${PAPER_TRADE_AMOUNT}\n"
-                   f"📈 <b>Jimillar Ciniki:</b> {TOTAL_TRADES}\n"
-                   f"✅ <b>Nasarar Wins:</b> {WINNING_TRADES} 📉\n"
-                   f"🔴 <b>Faduwar Losses:</b> {TOTAL_TRADES - WINNING_TRADES} 📉\n"
-                   f"🏆 <b>WIN RATE:</b> {winrate:.2f}%\n\n"
-                   f"{emoji} <b>NET REALIZED PNL: {pnl_sign}${NET_REALIZED_PNL_USD:.2f}</b>")
-            await send_msg(msg)
-            TOTAL_TRADES = 0
-            WINNING_TRADES = 0
-            NET_REALIZED_PNL_USD = 0.0
-
-async def monitor_active_trades():
-    global TOTAL_TRADES, WINNING_TRADES, NET_REALIZED_PNL_USD
-    while True:
-        for token_address, trade_data in list(ACTIVE_PAPER_TRADES.items()):
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-            try:
-                res = requests.get(url).json()
-                if res.get('pairs'):
-                    current_price = float(res['pairs'][0]['priceUsd'])
-                    buy_price = trade_data['buy_price']
-                    if current_price > trade_data['highest_price']:
-                        trade_data['highest_price'] = current_price
-                    drawdown_from_peak = ((current_price - trade_data['highest_price']) / trade_data['highest_price']) * 100
-                    
-                    if drawdown_from_peak <= -30.0:
-                        actual_pnl_percent = ((current_price - buy_price) / buy_price) * 100
-                        trade_pnl_usd = PAPER_TRADE_AMOUNT * (actual_pnl_percent / 100)
-                        TOTAL_TRADES += 1
-                        NET_REALIZED_PNL_USD += trade_pnl_usd
-                        if actual_pnl_percent > 0:
-                            WINNING_TRADES += 1
-                            result_title = "✅ <b>TRAILING TAKE PROFIT!</b>"
-                        else:
-                            result_title = "🛑 <b>TRAILING STOPLOSS!</b>"
-                        
-                        await send_msg(f"{result_title}\n\n"
-                                       f"🔹 <b>Token:</b> {trade_data['name']}\n"
-                                       f"📈 <b>Highest Peak:</b> ${trade_data['highest_price']:.6f}\n"
-                                       f"💸 <b>Riba/Asara (PNL):</b> {actual_pnl_percent:.2f}%\n"
-                                       f"💰 <b>Net Kudi:</b> ${trade_pnl_usd:.2f}\n"
-                                       f"<i>Bot ya sayar saboda ya fado -30% daga saman da ya kai.</i>")
-                        del ACTIVE_PAPER_TRADES[token_address]
-            except:
-                pass
-        await asyncio.sleep(10)
-
-async def track_and_trade(signature):
-    await asyncio.sleep(8)
-    token_address = None
-    tx_url = f"https://api.helius.xyz/v0/transactions/?api-key={HELIUS_API_KEY}"
-    try:
-        tx_res = requests.post(tx_url, json={"transactions": [signature]}).json()
-        if len(tx_res) > 0:
-            # WANNAN SHINE GYARAN DA MUKA YI DOMIN KAMO AINIHIN TOKEN DAIDAI
-            for transfer in tx_res[0].get("tokenTransfers", []):
-                if transfer["mint"] != "So11111111111111111111111111111111111111112":
-                    token_address = transfer["mint"]
-                    break
-    except:
-        pass
-
-    if not token_address or token_address in SEEN_TOKENS:
-        return
-    SEEN_TOKENS.add(token_address)
+async def track_and_trade(token_address):
     tracked_status = 'tracking'
     
     for _ in range(40):
         url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
         try:
-            res = requests.get(url).json()
+            res = requests.get(url, timeout=10).json()
             if res.get('pairs'):
                 pair = res['pairs'][0]
                 name = pair.get('baseToken', {}).get('name', 'Unknown')
@@ -158,12 +70,12 @@ async def track_and_trade(signature):
                 price = float(pair.get('priceUsd', 0))
                 
                 if tracked_status == 'tracking':
-                    alert_msg = (f"🎓 <b>SABON GRADUATION (BONDED)!</b>\n\n"
+                    alert_msg = (f"🎓 <b>SABON GRADUATION (WEBHOOK)!</b>\n\n"
                                  f"🏷 <b>Suna:</b> {name}\n"
                                  f"🔗 <b>CA:</b> <code>{token_address}</code>\n"
                                  f"📊 <b>MCAP:</b> ${mcap:,.2f}\n"
                                  f"📈 <b>Volume:</b> ${volume:,.2f}\n\n"
-                                 f"<i>Bot yana jiran Retest <=30k da Bounce >=30k...</i>")
+                                 f"<i>Bot yana jiran Retest <=30k...</i>")
                     await send_msg(alert_msg)
                     tracked_status = 'wait_retest'
                 
@@ -184,51 +96,32 @@ async def track_and_trade(signature):
                                            f"💰 <b>Kudi:</b> ${PAPER_TRADE_AMOUNT}\n\n"
                                            f"✅ <i>Dokoki sun cika! An kunna -30% Trailing Stoploss.</i>")
                         break
-        except:
+        except Exception:
             pass
         await asyncio.sleep(10)
 
+async def webhook_processor():
+    while True:
+        if INCOMING_WEBHOOK_TOKENS:
+            token = INCOMING_WEBHOOK_TOKENS.pop(0)
+            asyncio.create_task(track_and_trade(token))
+        await asyncio.sleep(1)
+
 async def pydroid_heartbeat():
     while True:
-        print("🟢 Injin yana numfashi a cikin Render...")
-        await asyncio.sleep(10)
+        print("🟢 Kofar Webhook a Bude Take...", flush=True)
+        await asyncio.sleep(60)
 
-async def kdv_snipe_bot():
+async def kdv_sniper_bot():
     print("🚀 BOT YA TASHI! Zai tura sako a Telegram yanzu...")
-    await send_msg("🟢 <b>KDV-Scanner An Dora Shi a RENDER (Cloud)!</b>\n\n<i>Yanzu Bot din ya zama na kansa. Baya bukatar wayarka ko intanet dinka. Zai yi aiki 24/7 ba dare ba rana!</i>")
-    uri = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
-    asyncio.create_task(monitor_active_trades())
-    asyncio.create_task(send_hourly_report())
-    asyncio.create_task(send_daily_report())
+    await send_msg("🟢 KDV-Scanner (Webhook) An Dora Shi a RENDER!\n\n<i>Kofar Asibitin mu tana a bude tana jiran Helius ta kawo Graduation.</i>")
+    
+    asyncio.create_task(webhook_processor())
     asyncio.create_task(pydroid_heartbeat())
     
     while True:
-        try:
-            async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
-                req = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "logsSubscribe",
-                    "params": [
-                        {"mentions": ["39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg"]},
-                        {"commitment": "processed"}
-                    ]
-                }
-                await ws.send(json.dumps(req))
-                while True:
-                    data = json.loads(await ws.recv())
-                    if "params" in data:
-                        sig = data["params"]["result"]["value"]["signature"]
-                        logs = str(data["params"]["result"]["value"]["logs"])
-                        if sig not in SEEN_SIGS:
-                            if "InitializeInstruction2" in logs:
-                                SEEN_SIGS.add(sig)
-                                asyncio.create_task(track_and_trade(sig))
-        except Exception as e:
-            await asyncio.sleep(2)
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    # Fara kunna gidan yaudarar nan tukunna (Fake website)
-    keep_alive()
-    # Sannan a kaddamar da asalin Bot din!
-    asyncio.run(kdv_snipe_bot())
+    keep_alive() 
+    asyncio.run(kdv_sniper_bot())
