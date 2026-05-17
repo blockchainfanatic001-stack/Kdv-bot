@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 from threading import Thread
 
 # --- BAYANANKA DA API KEYS ---
+# (Kar ka manta ka saka ainihin Token da Chat ID dinka anan)
 TELEGRAM_BOT_TOKEN = "8513711051:AAHNH_JyFvcw87FrE0bKNYakyBkvZa8KraM"
 TELEGRAM_CHAT_ID = "6600029204"
 
@@ -11,10 +12,6 @@ PAPER_TRADE_AMOUNT = 20.0
 ACTIVE_PAPER_TRADES = {}
 SEEN_TOKENS = set()
 INCOMING_WEBHOOK_TOKENS = [] 
-
-TOTAL_TRADES = 0
-WINNING_TRADES = 0
-NET_REALIZED_PNL_USD = 0.0
 
 # --- KOFAR ASIBITIN RENDER (WEBHOOK) ---
 app = Flask(__name__)
@@ -38,15 +35,6 @@ def helius_webhook():
                         INCOMING_WEBHOOK_TOKENS.append(mint)
                         SEEN_TOKENS.add(mint)
                         print(f"✅ KOFAR ASIBITI: An Karbi Sabon Token: {mint}", flush=True)
-                        
-                        # 🚨 SABON LAYIN TILASTA TELEGRAM (Dole ya yi kara!) 🚨
-                        try:
-                            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                            sako = f"🔔 <b>HELIUS TA KAWO MOTA!</b>\n\nCA: <code>{mint}</code>\n\n<i>Ina jiran DexScreener ta gano shi don in duba MCAP...</i>"
-                            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": sako, "parse_mode": "HTML"})
-                        except:
-                            pass
-                            
     return jsonify({"status": "success"}), 200
 
 def run_server():
@@ -67,8 +55,15 @@ def check_advanced_security(token_address):
     return True
 
 async def track_and_trade(token_address):
-    tracked_status = 'tracking'
+    # 🚨 GANGAR ALERT: Wannan zai fado nan take ba tare da jiran kowa ba! 🚨
+    alert_msg = (f"🎓 <b>SABON GRADUATION DETECTED!</b>\n\n"
+                 f"🔗 <b>CA:</b> <code>{token_address}</code>\n\n"
+                 f"<i>Bot ya fara leken DexScreener don jiran dokar sayayya ta 30k...</i>")
+    await send_msg(alert_msg)
     
+    tracked_status = 'wait_retest'
+    
+    # 🕵️‍♂️ Sannan ya ci gaba da jiran kasuwa don dokar SAYAYYA (Paper Trade)
     for _ in range(40):
         url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
         try:
@@ -80,20 +75,11 @@ async def track_and_trade(token_address):
                 volume = float(pair.get('volume', {}).get('h24', 0))
                 price = float(pair.get('priceUsd', 0))
                 
-                if tracked_status == 'tracking':
-                    alert_msg = (f"🎓 <b>SABON GRADUATION (WEBHOOK)!</b>\n\n"
-                                 f"🏷 <b>Suna:</b> {name}\n"
-                                 f"🔗 <b>CA:</b> <code>{token_address}</code>\n"
-                                 f"📊 <b>MCAP:</b> ${mcap:,.2f}\n"
-                                 f"📈 <b>Volume:</b> ${volume:,.2f}\n\n"
-                                 f"<i>Bot yana jiran Retest <=30k...</i>")
-                    await send_msg(alert_msg)
-                    tracked_status = 'wait_retest'
-                
                 if tracked_status == 'wait_retest':
                     if mcap <= 30000:
                         tracked_status = 'retested'
                 elif tracked_status == 'retested':
+                    # DOKAR SAYAYYA KACAL
                     if mcap >= 30000 and volume >= 30000:
                         if check_advanced_security(token_address):
                             ACTIVE_PAPER_TRADES[token_address] = {
@@ -101,6 +87,7 @@ async def track_and_trade(token_address):
                             }
                             await send_msg(f"🚀 <b>AN SAYI PAPER TRADE!</b>\n\n"
                                            f"🏷 <b>Suna:</b> {name}\n"
+                                           f"🔗 <b>CA:</b> <code>{token_address}</code>\n"
                                            f"💲 <b>Farashi:</b> ${price:.6f}\n"
                                            f"📊 <b>MCAP:</b> ${mcap:,.2f}\n"
                                            f"📈 <b>Volume:</b> ${volume:,.2f}\n"
@@ -124,8 +111,8 @@ async def pydroid_heartbeat():
         await asyncio.sleep(60)
 
 async def kdv_sniper_bot():
-    print("🚀 BOT YA TASHI! Zai tura sako a Telegram yanzu...")
-    await send_msg("🟢 KDV-Scanner (Webhook) An Dora Shi a RENDER!\n\n<i>Kofar Asibitin mu tana a bude tana jiran Helius ta kawo Graduation.</i>")
+    print("🚀 BOT YA TASHI!")
+    await send_msg("🟢 KDV-Scanner Yana Aiki!\n\n<i>Zan rika turo CA nan take idan an yi Graduation, sannan in bi sawaye don dokar sayayya.</i>")
     
     asyncio.create_task(webhook_processor())
     asyncio.create_task(pydroid_heartbeat())
