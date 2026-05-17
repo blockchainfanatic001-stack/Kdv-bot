@@ -26,6 +26,8 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def helius_webhook():
     data = request.json
+    print(f"🔥 ASALIN SAKON HELIUS: {data}", flush=True)
+
     if data and isinstance(data, list):
         for tx in data:
             transfers = tx.get("tokenTransfers", [])
@@ -35,7 +37,16 @@ def helius_webhook():
                     if mint not in SEEN_TOKENS:
                         INCOMING_WEBHOOK_TOKENS.append(mint)
                         SEEN_TOKENS.add(mint)
-                        print(f"🔥 KOFAR ASIBITI: An Karbi Sabon Token: {mint}", flush=True)
+                        print(f"✅ KOFAR ASIBITI: An Karbi Sabon Token: {mint}", flush=True)
+                        
+                        # 🚨 SABON LAYIN TILASTA TELEGRAM (Dole ya yi kara!) 🚨
+                        try:
+                            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                            sako = f"🔔 <b>HELIUS TA KAWO MOTA!</b>\n\nCA: <code>{mint}</code>\n\n<i>Ina jiran DexScreener ta gano shi don in duba MCAP...</i>"
+                            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": sako, "parse_mode": "HTML"})
+                        except:
+                            pass
+                            
     return jsonify({"status": "success"}), 200
 
 def run_server():
